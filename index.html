@@ -1,0 +1,1765 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verilog 實境紅綠燈 FSM 模擬器 (警力指揮版)</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    /* 車輛移動動畫 - 覆蓋整個 360px 畫布，從路口外 -50px 直達 410px，解決過斑馬線消失問題 */
+    @keyframes keyframe-ns {
+      0% { transform: translateY(-50px); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateY(410px); opacity: 0; }
+    }
+    @keyframes keyframe-sn {
+      0% { transform: translateY(410px); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateY(-50px); opacity: 0; }
+    }
+    @keyframes keyframe-we {
+      0% { transform: translateX(-50px); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateX(410px); opacity: 0; }
+    }
+    @keyframes keyframe-ew {
+      0% { transform: translateX(410px); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateX(-50px); opacity: 0; }
+    }
+
+    /* 車輛動畫 Class 綁定 */
+    .car-anim-ns {
+      animation: keyframe-ns 3s linear forwards;
+    }
+    .car-anim-sn {
+      animation: keyframe-sn 3s linear forwards;
+    }
+    .car-anim-we {
+      animation: keyframe-we 3s linear forwards;
+    }
+    .car-anim-ew {
+      animation: keyframe-ew 3s linear forwards;
+    }
+
+    /* 行人移動動畫 */
+    @keyframes ped-n-to-s {
+      0% { transform: translateY(0); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateY(150px); opacity: 0; }
+    }
+    @keyframes ped-s-to-n {
+      0% { transform: translateY(0); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateY(-150px); opacity: 0; }
+    }
+    @keyframes ped-w-to-e {
+      0% { transform: translateX(0); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateX(150px); opacity: 0; }
+    }
+    @keyframes ped-e-to-w {
+      0% { transform: translateX(0); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateX(-150px); opacity: 0; }
+    }
+
+    .ped-ns-active {
+      animation: ped-n-to-s 5s linear forwards;
+    }
+    .ped-sn-active {
+      animation: ped-s-to-n 5s linear forwards;
+    }
+    .ped-we-active {
+      animation: ped-w-to-e 5s linear forwards;
+    }
+    .ped-ew-active {
+      animation: ped-e-to-w 5s linear forwards;
+    }
+
+    /* 黃燈時行人跑步加速動畫 */
+    .ped-fast {
+      animation-duration: 2.5s !important;
+    }
+
+    /* 糾紛行人逃跑動畫 */
+    @keyframes dispute-flee-left {
+      0% { transform: translateX(0); opacity: 1; }
+      100% { transform: translateX(-100px); opacity: 0; }
+    }
+    @keyframes dispute-flee-right {
+      0% { transform: translateX(0); opacity: 1; }
+      100% { transform: translateX(100px); opacity: 0; }
+    }
+    .ped-flee-l {
+      animation: dispute-flee-left 1.2s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
+    }
+    .ped-flee-r {
+      animation: dispute-flee-right 1.2s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
+    }
+
+    /* 碰撞文字特效動畫 */
+    @keyframes crash-pop {
+      0% { transform: scale(0.3) translateY(0); opacity: 0; }
+      50% { transform: scale(1.2) translateY(-10px); opacity: 1; }
+      100% { transform: scale(1) translateY(-25px); opacity: 0; }
+    }
+    .crash-text-animation {
+      animation: crash-pop 1s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
+    }
+
+    /* 救護車警笛閃爍動畫 */
+    @keyframes siren-flash {
+      0%, 100% { background-color: #ef4444; box-shadow: 0 0 6px #ef4444; }
+      50% { background-color: #3b82f6; box-shadow: 0 0 6px #3b82f6; }
+    }
+    .ambulance-siren {
+      animation: siren-flash 0.25s infinite;
+    }
+
+    /* 警察哨子音波動畫 */
+    @keyframes whistle-wave {
+      0% { transform: scale(0.6); opacity: 1; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+    .whistle-ripple {
+      animation: whistle-wave 0.8s ease-out forwards;
+    }
+
+    /* 指揮棒發光閃爍 */
+    @keyframes baton-blink {
+      0%, 100% { filter: drop-shadow(0 0 2px #ef4444) brightness(1); }
+      50% { filter: drop-shadow(0 0 8px #ef4444) brightness(1.8); }
+    }
+    .baton-glow {
+      animation: baton-blink 0.3s infinite;
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans flex flex-col justify-between">
+
+  <!-- Header -->
+  <header class="bg-slate-800 border-b border-slate-700 p-4 shadow-lg">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+      <div class="flex items-center gap-3">
+        <div class="p-2.5 bg-indigo-600 rounded-lg text-white shadow-md shadow-indigo-500/20">
+          <i class="fa-solid fa-traffic-light text-2xl animate-pulse"></i>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold tracking-wide">CPLD (ccc) 十字路口模擬器 - 警力執法指揮版</h1>
+          <p class="text-xs text-slate-400">Verilog 1000Hz 狀態機、實體交警引導、闖紅燈開單與碰撞物理引擎</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-4">
+        <span class="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full border border-emerald-500/20 font-mono">
+          Model: MAX II (EPM240)
+        </span>
+        <span class="text-xs bg-indigo-500/10 text-indigo-400 px-2.5 py-1 rounded-full border border-indigo-500/20 font-mono">
+          CLK: PIN_119 (1000Hz)
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 flex-grow w-full">
+    
+    <!-- Left Column: Visual Simulator & Interactive Controls (7 Cols) -->
+    <div class="lg:col-span-7 flex flex-col gap-6">
+      
+      <!-- Interactive Map Panel -->
+      <div class="bg-slate-800 rounded-2xl border border-slate-700 shadow-xl overflow-hidden p-6 flex flex-col items-center relative">
+        <h2 class="text-md font-semibold mb-4 text-slate-300 self-start flex items-center justify-between w-full">
+          <span class="flex items-center gap-2">
+            <i class="fa-solid fa-map-location-dot text-indigo-400"></i> 執勤現場 (交警監控與強行闖紅燈逮捕)
+          </span>
+          <span class="text-xs text-slate-400 flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded-full border border-slate-700">
+            <span class="w-2 h-2 rounded-full bg-rose-500 inline-block animate-ping"></span> 執法天眼運作中
+          </span>
+        </h2>
+        
+        <!-- Intersection Canvas/SVG -->
+        <div id="intersection-container" class="relative w-full max-w-[380px] aspect-square bg-slate-950 rounded-xl overflow-hidden border border-slate-800 shadow-inner">
+          
+          <!-- Roads (SVG Background for Road lines) -->
+          <svg class="absolute inset-0 w-full h-full" viewBox="0 0 360 360">
+            <!-- Asphalt gray background for roads -->
+            <rect x="130" y="0" width="100" height="360" fill="#2d3748" />
+            <rect x="0" y="130" width="360" height="100" fill="#2d3748" />
+            <!-- Lane markings (Yellow double lines center) -->
+            <!-- North-South -->
+            <line x1="178" y1="0" x2="178" y2="130" stroke="#ecc94b" stroke-width="2" />
+            <line x1="182" y1="0" x2="182" y2="130" stroke="#ecc94b" stroke-width="2" />
+            <line x1="178" y1="230" x2="178" y2="360" stroke="#ecc94b" stroke-width="2" />
+            <line x1="182" y1="230" x2="182" y2="360" stroke="#ecc94b" stroke-width="2" />
+            <!-- East-West -->
+            <line x1="0" y1="178" x2="130" y2="178" stroke="#ecc94b" stroke-width="2" />
+            <line x1="0" y1="182" x2="130" y2="182" stroke="#ecc94b" stroke-width="2" />
+            <line x1="230" y1="178" x2="360" y2="178" stroke="#ecc94b" stroke-width="2" />
+            <line x1="230" y1="182" x2="360" y2="182" stroke="#ecc94b" stroke-width="2" />
+            
+            <!-- White stop lines -->
+            <line x1="130" y1="130" x2="180" y2="130" stroke="#ffffff" stroke-width="4" /> <!-- South direction bound stop line -->
+            <line x1="180" y1="230" x2="230" y2="230" stroke="#ffffff" stroke-width="4" /> <!-- North direction bound stop line -->
+            <line x1="130" y1="180" x2="130" y2="230" stroke="#ffffff" stroke-width="4" /> <!-- East direction bound stop line -->
+            <line x1="230" y1="130" x2="230" y2="180" stroke="#ffffff" stroke-width="4" /> <!-- West direction bound stop line -->
+            
+            <!-- Zebra Crossings (White crosswalks dashed) -->
+            <!-- North crosswalk -->
+            <line x1="135" y1="108" x2="225" y2="108" stroke="#ffffff" stroke-width="12" stroke-dasharray="6, 5" />
+            <!-- South crosswalk -->
+            <line x1="135" y1="252" x2="225" y2="252" stroke="#ffffff" stroke-width="12" stroke-dasharray="6, 5" />
+            <!-- West crosswalk -->
+            <line x1="108" y1="135" x2="108" y2="225" stroke="#ffffff" stroke-width="12" stroke-dasharray="5, 6" />
+            <!-- East crosswalk -->
+            <line x1="252" y1="135" x2="252" y2="225" stroke="#ffffff" stroke-width="12" stroke-dasharray="5, 6" />
+          </svg>
+
+          <!-- Dynamic Layers -->
+          <div id="cars-layer" class="absolute inset-0 pointer-events-none"></div>
+          <div id="pedestrians-layer" class="absolute inset-0 pointer-events-none"></div>
+
+          <!-- ========================================================================= -->
+          <!-- 👮 交通警察（中央控制角色） -->
+          <!-- ========================================================================= -->
+          <div id="police-officer" class="absolute top-[165px] left-[165px] w-[30px] h-[30px] z-30 transition-transform duration-500 origin-center flex items-center justify-center">
+            <!-- 警察哨音波形特效（發射環，動態產生） -->
+            <div id="whistle-ripples-container" class="absolute inset-0 pointer-events-none flex items-center justify-center"></div>
+            
+            <!-- 警察本體 SVG -->
+            <svg class="w-full h-full drop-shadow-md overflow-visible" viewBox="0 0 30 30">
+              <!-- 大盤帽 (黑/藍帽) -->
+              <ellipse cx="15" cy="11" rx="7" ry="4.5" fill="#1e293b" />
+              <path d="M10,11 Q15,15 20,11" stroke="#38bdf8" stroke-width="1.5" fill="none" />
+              
+              <!-- 頭部與耳朵 -->
+              <circle cx="15" cy="15" r="5" fill="#fbcfe8" />
+              
+              <!-- 警徽 -->
+              <polygon points="15,8 16,10 15,11 14,10" fill="#f59e0b" />
+
+              <!-- 雙臂 & 反光背心 -->
+              <g id="police-arms">
+                <!-- 左臂 (阻擋) -->
+                <line id="arm-left" x1="10" y1="16" x2="4" y2="16" stroke="#fbbf24" stroke-width="3" stroke-linecap="round" />
+                <!-- 右臂 (高舉指揮棒) -->
+                <line id="arm-right" x1="20" y1="16" x2="26" y2="16" stroke="#fbbf24" stroke-width="3" stroke-linecap="round" />
+                
+                <!-- 🚨 發光指揮棒 (Baton) -->
+                <line id="police-baton" x1="26" y1="16" x2="31" y2="16" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" class="baton-glow" />
+              </g>
+
+              <!-- 反光背心 -->
+              <rect x="11" y="15" width="8" height="8" rx="1.5" fill="#eab308" />
+              <rect x="12" y="16" width="6" height="2" fill="#1e293b" />
+              <rect x="12" y="20" width="6" height="1" fill="#38bdf8" />
+            </svg>
+          </div>
+
+          <!-- Physical Vehicular Lights -->
+          <!-- NORTH (TR1, TY1, TG1) -->
+          <div class="absolute top-[82px] left-[142px] flex flex-col gap-1 bg-slate-900 border border-slate-700 p-1 rounded-md shadow-md z-10">
+            <div id="TR1-light" class="w-3 h-3 rounded-full bg-slate-800 transition-colors duration-200"></div>
+            <div id="TY1-light" class="w-3 h-3 rounded-full bg-slate-800 transition-colors duration-200"></div>
+            <div id="TG1-light" class="w-3 h-3 rounded-full bg-slate-800 transition-colors duration-200"></div>
+          </div>
+          
+          <!-- SOUTH (TR3, TY3, TG3) -->
+          <div class="absolute bottom-[82px] right-[142px] flex flex-col gap-1 bg-slate-900 border border-slate-700 p-1 rounded-md shadow-md z-10">
+            <div id="TG3-light" class="w-3 h-3 rounded-full bg-slate-800 transition-colors duration-200"></div>
+            <div id="TY3-light" class="w-3 h-3 rounded-full bg-slate-800 transition-colors duration-200"></div>
+            <div id="TR3-light" class="w-3 h-3 rounded-full bg-slate-800 transition-colors duration-200"></div>
+          </div>
+
+          <!-- EAST (TR2, TY2, TG2) -->
+          <div class="absolute right-[82px] top-[142px] flex gap-1 bg-slate-900 border border-slate-700 p-1 rounded-md shadow-md z-10">
+            <div id="TR2-light" class="w-3 h-3 rounded-full bg-slate-800 transition-colors duration-200"></div>
+            <div id="TY2-light" class="w-3 h-3 rounded-full bg-slate-800 transition-colors duration-200"></div>
+            <div id="TG2-light" class="w-3 h-3 rounded-full bg-slate-800 transition-colors duration-200"></div>
+          </div>
+
+          <!-- WEST (TR4, TY4, TG4) -->
+          <div class="absolute left-[82px] bottom-[142px] flex gap-1 bg-slate-900 border border-slate-700 p-1 rounded-md shadow-md z-10">
+            <div id="TG4-light" class="w-3 h-3 rounded-full bg-slate-800 transition-colors duration-200"></div>
+            <div id="TY4-light" class="w-3 h-3 rounded-full bg-slate-800 transition-colors duration-200"></div>
+            <div id="TR4-light" class="w-3 h-3 rounded-full bg-slate-800 transition-colors duration-200"></div>
+          </div>
+
+          <!-- 行人專用號誌 (4個角落) -->
+          <!-- 1. 左上角 (Top-Left) -->
+          <div class="absolute top-[95px] left-[95px] flex gap-1 bg-slate-950/90 border border-slate-800 p-1 rounded z-20 scale-90">
+            <div class="flex flex-col gap-0.5 items-center bg-slate-900 p-0.5 rounded">
+              <i id="ped-W-red" class="fa-solid fa-person-shelter text-[10px] text-red-600"></i>
+              <i id="ped-W-green" class="fa-solid fa-person-walking text-[10px] text-slate-800"></i>
+            </div>
+            <div class="flex flex-col gap-0.5 items-center bg-slate-900 p-0.5 rounded">
+              <i id="ped-N-red" class="fa-solid fa-person-shelter text-[10px] text-red-600"></i>
+              <i id="ped-N-green" class="fa-solid fa-person-walking text-[10px] text-slate-800"></i>
+            </div>
+          </div>
+
+          <!-- 2. 右上角 (Top-Right) -->
+          <div class="absolute top-[95px] right-[95px] flex gap-1 bg-slate-950/90 border border-slate-800 p-1 rounded z-20 scale-90">
+            <div class="flex flex-col gap-0.5 items-center bg-slate-900 p-0.5 rounded">
+              <i id="ped-E-red" class="fa-solid fa-person-shelter text-[10px] text-red-600"></i>
+              <i id="ped-E-green" class="fa-solid fa-person-walking text-[10px] text-slate-800"></i>
+            </div>
+          </div>
+
+          <!-- 3. 左下角 (Bottom-Left) -->
+          <div class="absolute bottom-[95px] left-[95px] flex gap-1 bg-slate-950/90 border border-slate-800 p-1 rounded z-20 scale-90">
+            <div class="flex flex-col gap-0.5 items-center bg-slate-900 p-0.5 rounded">
+              <i id="ped-S-red" class="fa-solid fa-person-shelter text-[10px] text-red-600"></i>
+              <i id="ped-S-green" class="fa-solid fa-person-walking text-[10px] text-slate-800"></i>
+            </div>
+          </div>
+
+          <div class="absolute top-[112px] left-[112px] text-[8px] text-slate-500 font-bold select-none">NW</div>
+          <div class="absolute top-[112px] right-[112px] text-[8px] text-slate-500 font-bold select-none">NE</div>
+          <div class="absolute bottom-[112px] left-[112px] text-[8px] text-slate-500 font-bold select-none">SW</div>
+          <div class="absolute bottom-[112px] right-[112px] text-[8px] text-slate-500 font-bold select-none">SE</div>
+
+        </div>
+
+        <!-- Light Indicators Realtime Value Board -->
+        <div class="w-full mt-6 grid grid-cols-4 gap-2 text-center text-[11px]">
+          <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-700/50">
+            <p class="text-[10px] text-indigo-400 font-bold mb-1">北向 (PIN 1,2,3)</p>
+            <div class="flex justify-center gap-1 font-mono">
+              <span id="TR1-val" class="px-1 py-0.5 rounded text-xs">TR1=0</span>
+              <span id="TY1-val" class="px-1 py-0.5 rounded text-xs">TY1=0</span>
+              <span id="TG1-val" class="px-1 py-0.5 rounded text-xs">TG1=0</span>
+            </div>
+          </div>
+          <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-700/50">
+            <p class="text-[10px] text-indigo-400 font-bold mb-1">東向 (PIN 4,5,6)</p>
+            <div class="flex justify-center gap-1 font-mono">
+              <span id="TR2-val" class="px-1 py-0.5 rounded text-xs">TR2=0</span>
+              <span id="TY2-val" class="px-1 py-0.5 rounded text-xs">TY2=0</span>
+              <span id="TG2-val" class="px-1 py-0.5 rounded text-xs">TG2=0</span>
+            </div>
+          </div>
+          <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-700/50">
+            <p class="text-[10px] text-indigo-400 font-bold mb-1">南向 (PIN 101,102,103)</p>
+            <div class="flex justify-center gap-1 font-mono">
+              <span id="TR3-val" class="px-1 py-0.5 rounded text-xs">TR3=0</span>
+              <span id="TY3-val" class="px-1 py-0.5 rounded text-xs">TY3=0</span>
+              <span id="TG3-val" class="px-1 py-0.5 rounded text-xs">TG3=0</span>
+            </div>
+          </div>
+          <div class="bg-slate-950/60 p-2.5 rounded-lg border border-slate-700/50">
+            <p class="text-[10px] text-indigo-400 font-bold mb-1">西向 (PIN 104,105,106)</p>
+            <div class="flex justify-center gap-1 font-mono">
+              <span id="TR4-val" class="px-1 py-0.5 rounded text-xs">TR4=0</span>
+              <span id="TY4-val" class="px-1 py-0.5 rounded text-xs">TY4=0</span>
+              <span id="TG4-val" class="px-1 py-0.5 rounded text-xs">TG4=0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls Panel -->
+      <div class="bg-slate-800 rounded-2xl border border-slate-700 shadow-xl p-5">
+        <h2 class="text-md font-semibold mb-3 text-slate-300 flex items-center gap-2">
+          <i class="fa-solid fa-sliders text-indigo-400"></i> 控制面板與特警干預器
+        </h2>
+        
+        <div class="flex flex-col md:flex-row gap-4 items-center justify-between mb-4">
+          <!-- Button controls -->
+          <div class="flex items-center gap-2 w-full md:w-auto flex-wrap">
+            <button id="btn-play" class="flex-1 md:flex-none px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2 shadow-md shadow-indigo-500/10">
+              <i class="fa-solid fa-pause" id="play-icon"></i> <span id="play-text">暫停</span>
+            </button>
+            <button id="btn-step" class="flex-1 md:flex-none px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2">
+              <i class="fa-solid fa-forward-step"></i> 單步 (10ms)
+            </button>
+            <button id="btn-reset" class="flex-1 md:flex-none px-4 py-2 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 rounded-lg text-sm font-semibold text-rose-400 transition-colors flex items-center justify-center gap-2">
+              <i class="fa-solid fa-rotate-left"></i> 重設
+            </button>
+          </div>
+          
+          <!-- Speed Controller -->
+          <div class="flex items-center gap-3 w-full md:w-auto bg-slate-900/50 px-3.5 py-2 rounded-xl border border-slate-700/40 flex-grow max-w-sm">
+            <span class="text-xs text-slate-400 whitespace-nowrap"><i class="fa-solid fa-gauge-high mr-1"></i> 模擬速度:</span>
+            <input type="range" id="speed-slider" min="1" max="100" value="10" class="w-full accent-indigo-500 h-1.5 bg-slate-700 rounded-lg cursor-pointer">
+            <span id="speed-indicator" class="text-xs font-mono text-indigo-400 w-12 text-right">10x</span>
+          </div>
+        </div>
+
+        <!-- Pedestrian Push Button & Police Whistle & Dispute (Features) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <!-- 行人按鈕 -->
+          <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-700/50 flex flex-col justify-between gap-3">
+            <div class="flex items-center gap-2.5">
+              <div class="p-2 bg-indigo-500/10 border border-indigo-500/30 rounded-lg text-indigo-400 text-sm">
+                <i class="fa-solid fa-hand-pointer"></i>
+              </div>
+              <div>
+                <p class="text-xs font-bold text-slate-200">行人過馬路</p>
+                <p class="text-[9px] text-slate-400">跨街請求，綠燈延長 3s</p>
+              </div>
+            </div>
+            <button id="btn-pedestrian" class="w-full px-3 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 rounded-lg text-xs font-bold text-indigo-300 transition-all flex items-center justify-center gap-2 whitespace-nowrap">
+              <span id="ped-btn-status" class="w-2.5 h-2.5 rounded-full bg-slate-600 inline-block"></span>
+              <span>按下請求穿越</span>
+            </button>
+          </div>
+
+          <!-- 👮 警察指揮按鈕 -->
+          <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-700/50 flex flex-col justify-between gap-3">
+            <div class="flex items-center gap-2.5">
+              <div class="p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-400 text-sm">
+                <i class="fa-solid fa-bullhorn"></i>
+              </div>
+              <div>
+                <p class="text-xs font-bold text-slate-200">交警強制切換</p>
+                <p class="text-[9px] text-slate-400">大聲吹哨變換通行向</p>
+              </div>
+            </div>
+            <button id="btn-police-force" class="w-full px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg text-xs font-bold text-amber-300 transition-all flex items-center justify-center gap-2 whitespace-nowrap">
+              <i class="fa-solid fa-whistle"></i>
+              <span>吹哨變換車流</span>
+            </button>
+          </div>
+
+          <!-- 🤬 行人糾紛事件觸發器 -->
+          <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-700/50 flex flex-col justify-between gap-3">
+            <div class="flex items-center gap-2.5">
+              <div class="p-2 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-sm">
+                <i class="fa-solid fa-face-angry"></i>
+              </div>
+              <div>
+                <p class="text-xs font-bold text-slate-200">碰瓷糾紛事件</p>
+                <p class="text-[9px] text-slate-400">模擬路人相撞大打口水戰</p>
+              </div>
+            </div>
+            <button id="btn-dispute" class="w-full px-3 py-2 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 rounded-lg text-xs font-bold text-rose-300 transition-all flex items-center justify-center gap-2 whitespace-nowrap">
+              <i class="fa-solid fa-people-arrows"></i>
+              <span>觸發路口對罵</span>
+            </button>
+          </div>
+
+          <!-- 🚨 闖紅燈違規模擬按鈕 -->
+          <div class="bg-slate-950/60 p-4 rounded-xl border border-rose-500/20 flex flex-col justify-between gap-3">
+            <div class="flex items-center gap-2.5">
+              <div class="p-2 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 text-sm animate-pulse">
+                <i class="fa-solid fa-bolt"></i>
+              </div>
+              <div>
+                <p class="text-xs font-bold text-slate-200">違規闖紅燈車</p>
+                <p class="text-[9px] text-slate-400">生成違規車輛，啟動逮捕機制</p>
+              </div>
+            </div>
+            <button id="btn-violator" class="w-full px-3 py-2 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 rounded-lg text-xs font-bold text-rose-300 transition-all flex items-center justify-center gap-2 whitespace-nowrap">
+              <i class="fa-solid fa-car-burst"></i>
+              <span>模擬闖紅燈違規</span>
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Status Log, Verilog State Machine & PIN bindings (5 Cols) -->
+    <div class="lg:col-span-5 flex flex-col gap-6">
+      
+      <!-- FSM Active Monitor -->
+      <div class="bg-slate-800 rounded-2xl border border-slate-700 shadow-xl p-5 flex flex-col">
+        <h2 class="text-md font-semibold mb-4 text-slate-300 flex items-center gap-2">
+          <i class="fa-solid fa-microchip text-indigo-400"></i> FSM 狀態與暫存器
+        </h2>
+        
+        <!-- Internal Registers display -->
+        <div class="grid grid-cols-2 gap-4">
+          <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between">
+            <span class="text-[10px] text-slate-400 font-bold tracking-wider uppercase">Current State</span>
+            <div class="flex items-baseline gap-2 mt-1">
+              <span id="reg-state" class="text-2xl font-black font-mono text-indigo-400">S0</span>
+              <span id="reg-state-desc" class="text-xs text-slate-300 font-semibold">(南北通行)</span>
+            </div>
+          </div>
+          <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-between">
+            <span class="text-[10px] text-slate-400 font-bold tracking-wider uppercase">Counter (13-bit)</span>
+            <div class="flex items-baseline gap-2 mt-1">
+              <span id="reg-counter" class="text-2xl font-black font-mono text-emerald-400">0000</span>
+              <span class="text-xs text-slate-500 font-mono">/ <span id="reg-counter-limit">8000</span> ms</span>
+            </div>
+            <!-- Progress Bar -->
+            <div class="w-full bg-slate-800 rounded-full h-1 mt-2 overflow-hidden">
+              <div id="counter-progress" class="bg-emerald-500 h-1 rounded-full transition-all duration-100" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 警政開單與執法統計面板 -->
+        <div class="grid grid-cols-2 gap-4 mt-4">
+          <div class="bg-slate-950 p-3.5 rounded-xl border border-rose-950/60 flex flex-col justify-between">
+            <span class="text-[9px] text-rose-400 font-bold tracking-wider uppercase flex items-center gap-1">
+              <i class="fa-solid fa-handcuffs"></i> 攔截闖紅燈違規
+            </span>
+            <div class="flex items-baseline gap-1 mt-1">
+              <span id="stat-tickets" class="text-2xl font-black font-mono text-rose-400">0</span>
+              <span class="text-[10px] text-slate-500 font-semibold">件</span>
+            </div>
+          </div>
+          <div class="bg-slate-950 p-3.5 rounded-xl border border-emerald-950/60 flex flex-col justify-between">
+            <span class="text-[9px] text-emerald-400 font-bold tracking-wider uppercase flex items-center gap-1">
+              <i class="fa-solid fa-sack-dollar"></i> 國庫罰鍰進帳
+            </span>
+            <div class="flex items-baseline gap-1 mt-1">
+              <span id="stat-fines" class="text-2xl font-black font-mono text-emerald-400">$0</span>
+              <span class="text-[10px] text-slate-500 font-semibold">TWD</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Flowchart of States -->
+        <div class="flex flex-col gap-2 relative bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/60 mt-4 mb-1">
+          <span class="text-[10px] text-indigo-400 font-bold uppercase tracking-wider mb-2">當前狀態轉移流向：</span>
+          
+          <!-- S0 -->
+          <div id="state-node-S0" class="flex items-center justify-between p-2 rounded-lg border border-slate-800 transition-all duration-300">
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full bg-slate-600" id="dot-S0"></div>
+              <span class="font-mono text-xs font-semibold">S0: 南北通行 (車綠 / 行人橫向紅)</span>
+            </div>
+            <span class="text-[10px] text-slate-400 font-mono bg-slate-900 px-1.5 py-0.5 rounded">8000 ms</span>
+          </div>
+          
+          <!-- S1 -->
+          <div id="state-node-S1" class="flex items-center justify-between p-2 rounded-lg border border-slate-800 transition-all duration-300">
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full bg-slate-600" id="dot-S1"></div>
+              <span class="font-mono text-xs font-semibold">S1: 南北警告 (車黃 / 行人橫向閃爍)</span>
+            </div>
+            <span class="text-[10px] text-slate-400 font-mono bg-slate-900 px-1.5 py-0.5 rounded">4000 ms</span>
+          </div>
+
+          <!-- S2 -->
+          <div id="state-node-S2" class="flex items-center justify-between p-2 rounded-lg border border-slate-800 transition-all duration-300">
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full bg-slate-600" id="dot-S2"></div>
+              <span class="font-mono text-xs font-semibold">S2: 東西通行 (車綠 / 行人縱向紅)</span>
+            </div>
+            <span class="text-[10px] text-slate-400 font-mono bg-slate-900 px-1.5 py-0.5 rounded">8000 ms</span>
+          </div>
+
+          <!-- S3 -->
+          <div id="state-node-S3" class="flex items-center justify-between p-2 rounded-lg border border-slate-800 transition-all duration-300">
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full bg-slate-600" id="dot-S3"></div>
+              <span class="font-mono text-xs font-semibold">S3: 東西警告 (車黃 / 行人縱向閃爍)</span>
+            </div>
+            <span class="text-[10px] text-slate-400 font-mono bg-slate-900 px-1.5 py-0.5 rounded">4000 ms</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Verilog Info & Pin Assignments Table -->
+      <div class="bg-slate-800 rounded-2xl border border-slate-700 shadow-xl p-5 flex-grow">
+        <h2 class="text-md font-semibold mb-4 text-slate-300 flex items-center gap-2">
+          <i class="fa-solid fa-list-check text-indigo-400"></i> CPLD 晶片腳位與交警資訊
+        </h2>
+        
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-900 text-[10px] text-indigo-400 font-bold uppercase tracking-wider border-b border-slate-800">
+              <tr>
+                <th class="p-2.5 rounded-l-lg">方向</th>
+                <th class="p-2.5">信號名稱</th>
+                <th class="p-2.5">實體腳位 (PIN)</th>
+                <th class="p-2.5 rounded-r-lg">行人與交警互動</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/50 font-mono">
+              <tr class="hover:bg-slate-700/20">
+                <td class="p-2.5 font-sans">北/南 (N/S)</td>
+                <td class="p-2.5 text-indigo-400 font-semibold">TR1,TR3 / TG1,TG3</td>
+                <td class="p-2.5 text-slate-400">PIN 1, 101 / PIN 3, 103</td>
+                <td class="p-2.5 text-slate-400">交警側身指引車行 (S0階段)</td>
+              </tr>
+              <tr class="hover:bg-slate-700/20">
+                <td class="p-2.5 font-sans">東/西 (E/W)</td>
+                <td class="p-2.5 text-indigo-400 font-semibold">TR2,TR4 / TG2,TG4</td>
+                <td class="p-2.5 text-slate-400">PIN 4, 104 / PIN 6, 106</td>
+                <td class="p-2.5 text-slate-400">交警面向阻擋，亮發光棒 (S2階段)</td>
+              </tr>
+              <tr class="hover:bg-slate-700/20">
+                <td class="p-2.5 font-sans">強制干預端</td>
+                <td class="p-2.5 text-amber-400 font-semibold">force_switch_in</td>
+                <td class="p-2.5 text-slate-400">PIN_115 (實體開關)</td>
+                <td class="p-2.5 text-slate-400">按壓後中斷狀態移轉，立即切換</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 警力配置說明板 -->
+        <div class="bg-slate-950/60 p-3.5 rounded-xl border border-slate-700/50">
+          <p class="text-[11px] font-bold text-amber-400 mb-2">👮 警力導引功能說明：</p>
+          <p class="text-[10px] text-slate-400 leading-relaxed">
+            十字路口正中心配置了動態警察角色。其轉向將**與 Verilog 狀態機硬體暫存器完美同步**。當行人發生糾紛相撞時，按下**「吹哨變換車流」**，警官會大聲吹響警笛、亮起警示，強力驅離糾紛群眾！
+          </p>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-slate-950 border-t border-slate-800 p-4 text-center text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-2">
+      <p>© 2026 Verilog CPLD Intersection Controller. 設計基於 MAX II 硬體特徵。</p>
+      <div class="flex gap-4">
+        <a href="#" class="hover:text-slate-300 transition-colors">Verilog 原始碼</a>
+        <span>|</span>
+        <a href="#" class="hover:text-slate-300 transition-colors">CPLD 設計教學</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // =========================================================================
+    // 模擬器底層狀態邏輯 (對應 Verilog 暫存器與狀態)
+    // =========================================================================
+    
+    // 狀態常數
+    const S0 = 0; // 南北通行 (綠)
+    const S1 = 1; // 南北警告 (黃)
+    const S2 = 2; // 東西通行 (綠)
+    const S3 = 3; // 東西警告 (黃)
+    
+    // 時間常數
+    const TIME_8S = 8000;
+    const TIME_4S = 4000;
+    
+    // 當前硬體暫存器模擬
+    let current_state = S0;
+    let next_state = S1;
+    let counter = 0;
+    
+    // 燈號輸出暫存器 (TRx, TYx, TGx)
+    let TR1 = 1, TY1 = 0, TG1 = 0; // 北
+    let TR2 = 1, TY2 = 0, TG2 = 0; // 東
+    let TR3 = 1, TY3 = 0, TG3 = 0; // 南
+    let TR4 = 1, TY4 = 0, TG4 = 0; // 西
+    
+    // 行人、警察、糾紛、違規統計狀態
+    let isPedRequestActive = false;
+    let pedGreenBlinkState = false; // 行人綠燈閃爍
+    let isDisputeActive = false;    // 糾紛事件是否進行中
+    let disputeTimer = null;        // 糾紛對話輪播定時器
+    
+    // 執法開單數據
+    let ticketCount = 0;
+    let fineRevenue = 0;
+
+    // Web Audio 合成器 (用來在網頁上生成真實的警察嗶嗶哨子聲，無須外部音檔)
+    let audioCtx = null;
+
+    // 模擬運作控制
+    let isPlaying = true;
+    let simulationSpeed = 10; 
+    const baseIntervalTime = 10; 
+    let intervalId = null;
+    
+    // DOM 元素快取
+    const regStateEl = document.getElementById('reg-state');
+    const regStateDescEl = document.getElementById('reg-state-desc');
+    const regCounterEl = document.getElementById('reg-counter');
+    const regCounterLimitEl = document.getElementById('reg-counter-limit');
+    const counterProgressEl = document.getElementById('counter-progress');
+    
+    const playIcon = document.getElementById('play-icon');
+    const playText = document.getElementById('play-text');
+    const speedSlider = document.getElementById('speed-slider');
+    const speedIndicator = document.getElementById('speed-indicator');
+    
+    const carsLayer = document.getElementById('cars-layer');
+    const pedestriansLayer = document.getElementById('pedestrians-layer');
+    
+    const btnPedestrian = document.getElementById('btn-pedestrian');
+    const pedBtnStatus = document.getElementById('ped-btn-status');
+    const policeOfficer = document.getElementById('police-officer');
+    const whistleRipplesContainer = document.getElementById('whistle-ripples-container');
+
+    // ==========================================
+    // 3. 狀態機轉移邏輯 (組合邏輯)
+    // ==========================================
+    function updateNextStateLogic() {
+      switch (current_state) {
+        case S0: next_state = S1; break;
+        case S1: next_state = S2; break;
+        case S2: next_state = S3; break;
+        case S3: next_state = S0; break;
+        default: next_state = S0;
+      }
+    }
+    
+    // ==========================================
+    // 4. 時序邏輯：時脈邊緣驅動 (Clock-edge Trigger)
+    // ==========================================
+    function tickClock(msPassed) {
+      for (let i = 0; i < msPassed; i++) {
+        updateNextStateLogic();
+        
+        // 閃爍計時
+        if (i % 250 === 0) {
+          pedGreenBlinkState = !pedGreenBlinkState;
+        }
+
+        // 行人請求邏輯：若按壓行人鈕，可將綠燈週期延長 (多 3 秒)
+        let limitVal = (current_state === S0 || current_state === S2) ? TIME_8S : TIME_4S;
+        if (isPedRequestActive && (current_state === S0 || current_state === S2)) {
+          limitVal = TIME_8S + 3000; // 延長綠燈 3 秒
+        }
+
+        switch (current_state) {
+          case S0:
+          case S2:
+            if (counter >= limitVal - 1) {
+              current_state = next_state;
+              counter = 0;
+              // 轉換狀態後自動清除行人請求
+              if (current_state === S1 || current_state === S3) {
+                clearPedestrianRequest();
+              }
+            } else {
+              counter++;
+            }
+            break;
+            
+          case S1:
+          case S3:
+            if (counter >= TIME_4S - 1) {
+              current_state = next_state;
+              counter = 0;
+            } else {
+              counter++;
+            }
+            break;
+            
+          default:
+            current_state = S0;
+            counter = 0;
+        }
+      }
+      
+      updateOutputDecoding();
+      updateUI();
+    }
+    
+    // ==========================================
+    // 5. 輸出解碼邏輯 (組合邏輯)
+    // ==========================================
+    function updateOutputDecoding() {
+      TR1 = 1; TY1 = 0; TG1 = 0;
+      TR2 = 1; TY2 = 0; TG2 = 0;
+      TR3 = 1; TY3 = 0; TG3 = 0;
+      TR4 = 1; TY4 = 0; TG4 = 0;
+      
+      switch (current_state) {
+        case S0:
+          TR1 = 0; TY1 = 0; TG1 = 1;
+          TR3 = 0; TY3 = 0; TG3 = 1;
+          break;
+        case S1:
+          TR1 = 0; TY1 = 1; TG1 = 0;
+          TR3 = 0; TY3 = 1; TG3 = 0;
+          break;
+        case S2:
+          TR2 = 0; TY2 = 0; TG2 = 1;
+          TR4 = 0; TY4 = 0; TG4 = 1;
+          break;
+        case S3:
+          TR2 = 0; TY2 = 1; TG2 = 0;
+          TR4 = 0; TY4 = 1; TG4 = 0;
+          break;
+      }
+    }
+    
+    // =========================================================================
+    // UI 可視化與行人/警察號誌邏輯
+    // =========================================================================
+    
+    function updateUI() {
+      // 1. 更新 FSM 暫存器數值顯示
+      const stateName = ["S0", "S1", "S2", "S3"][current_state];
+      const stateDesc = ["(南北通行)", "(南北警告)", "(東西通行)", "(東西警告)"][current_state];
+      let limitVal = (current_state === S0 || current_state === S2) ? TIME_8S : TIME_4S;
+      if (isPedRequestActive && (current_state === S0 || current_state === S2)) {
+        limitVal = TIME_8S + 3000;
+      }
+      
+      regStateEl.textContent = stateName;
+      regStateDescEl.textContent = stateDesc;
+      regCounterEl.textContent = String(counter).padStart(4, '0');
+      regCounterLimitEl.textContent = limitVal;
+      
+      const progressPercent = (counter / limitVal) * 100;
+      counterProgressEl.style.width = `${progressPercent}%`;
+      
+      // 2. 狀態節點流程圖高亮
+      for (let s = 0; s < 4; s++) {
+        const node = document.getElementById(`state-node-S${s}`);
+        const dot = document.getElementById(`dot-S${s}`);
+        if (s === current_state) {
+          node.className = "flex items-center justify-between p-2 rounded-lg border-2 border-indigo-500 bg-indigo-950/20 shadow-lg shadow-indigo-500/5 transition-all duration-200";
+          dot.className = "w-2 h-2 rounded-full bg-indigo-400 animate-ping";
+        } else {
+          node.className = "flex items-center justify-between p-2 rounded-lg border border-slate-800 bg-transparent transition-all duration-200";
+          dot.className = "w-1.5 h-1.5 rounded-full bg-slate-600";
+        }
+      }
+      
+      // 3. 地圖交通燈渲染
+      setPhysicalLight('TR1', TR1, 'bg-red-500', 'shadow-red-500/80');
+      setPhysicalLight('TY1', TY1, 'bg-yellow-400', 'shadow-yellow-400/80');
+      setPhysicalLight('TG1', TG1, 'bg-emerald-400', 'shadow-emerald-400/80');
+      
+      setPhysicalLight('TR2', TR2, 'bg-red-500', 'shadow-red-500/80');
+      setPhysicalLight('TY2', TY2, 'bg-yellow-400', 'shadow-yellow-400/80');
+      setPhysicalLight('TG2', TG2, 'bg-emerald-400', 'shadow-emerald-400/80');
+      
+      setPhysicalLight('TR3', TR3, 'bg-red-500', 'shadow-red-500/80');
+      setPhysicalLight('TY3', TY3, 'bg-yellow-400', 'shadow-yellow-400/80');
+      setPhysicalLight('TG3', TG3, 'bg-emerald-400', 'shadow-emerald-400/80');
+      
+      setPhysicalLight('TR4', TR4, 'bg-red-500', 'shadow-red-500/80');
+      setPhysicalLight('TY4', TY4, 'bg-yellow-400', 'shadow-yellow-400/80');
+      setPhysicalLight('TG4', TG4, 'bg-emerald-400', 'shadow-emerald-400/80');
+
+      // ==========================================
+      // 👮 警察方向與手勢同步邏輯
+      // ==========================================
+      const armLeft = document.getElementById('arm-left');
+      const armRight = document.getElementById('arm-right');
+      const baton = document.getElementById('police-baton');
+
+      if (current_state === S0 || current_state === S1) {
+        // 南北通行：警察面向橫向(東西)，引導南北。旋轉 90 度
+        policeOfficer.style.transform = 'rotate(90deg)';
+        
+        // 微調手臂顯示，做出指揮方向
+        if (armLeft && armRight && baton) {
+          // 左臂直伸阻擋，右臂指引發光
+          armLeft.setAttribute('x2', '4');
+          armLeft.setAttribute('y2', '16');
+          armRight.setAttribute('x2', '26');
+          armRight.setAttribute('y2', '14');
+          baton.setAttribute('x1', '26');
+          baton.setAttribute('y1', '14');
+          baton.setAttribute('x2', '31');
+          baton.setAttribute('y2', '11');
+        }
+      } else {
+        // 東西通行：警察面向縱向(南北)，引導東西。旋轉 0 度
+        policeOfficer.style.transform = 'rotate(0deg)';
+        
+        if (armLeft && armRight && baton) {
+          armLeft.setAttribute('x2', '4');
+          armLeft.setAttribute('y2', '16');
+          armRight.setAttribute('x2', '26');
+          armRight.setAttribute('y2', '18');
+          baton.setAttribute('x1', '26');
+          baton.setAttribute('y1', '18');
+          baton.setAttribute('x2', '31');
+          baton.setAttribute('y2', '21');
+        }
+      }
+
+      // ==========================================
+      // 行人號誌細部渲染 (4個方向)
+      // ==========================================
+      const isPedNSGreen = (current_state === S0);
+      const isPedNSBlink = (current_state === S1);
+      
+      const isPedEWGreen = (current_state === S2);
+      const isPedEWBlink = (current_state === S3);
+
+      updatePedestrianLight('ped-E', isPedNSGreen, isPedNSBlink);
+      updatePedestrianLight('ped-W', isPedNSGreen, isPedNSBlink);
+      updatePedestrianLight('ped-N', isPedEWGreen, isPedEWBlink);
+      updatePedestrianLight('ped-S', isPedEWGreen, isPedEWBlink);
+      
+      // 4. 下方即時電位指示
+      updateValElement('TR1-val', 'TR1', TR1);
+      updateValElement('TY1-val', 'TY1', TY1);
+      updateValElement('TG1-val', 'TG1', TG1);
+      
+      updateValElement('TR2-val', 'TR2', TR2);
+      updateValElement('TY2-val', 'TY2', TY2);
+      updateValElement('TG2-val', 'TG2', TG2);
+      
+      updateValElement('TR3-val', 'TR3', TR3);
+      updateValElement('TY3-val', 'TY3', TY3);
+      updateValElement('TG3-val', 'TG3', TG3);
+      
+      updateValElement('TR4-val', 'TR4', TR4);
+      updateValElement('TY4-val', 'TY4', TY4);
+      updateValElement('TG4-val', 'TG4', TG4);
+
+      // 5. 動態微調車流與人流控制
+      manageCarsFlow();
+      managePedestriansFlow();
+    }
+    
+    function setPhysicalLight(id, isActive, activeColorClass, shadowClass) {
+      const el = document.getElementById(`${id}-light`);
+      if (isActive) {
+        el.className = `w-3 h-3 rounded-full ${activeColorClass} shadow-[0_0_12px_2px_rgba(255,255,255,0.4)] ${shadowClass} transition-colors duration-100`;
+      } else {
+        el.className = `w-3 h-3 rounded-full bg-slate-800 transition-colors duration-100`;
+      }
+    }
+
+    // 更新行人號誌的圖標顏色與閃爍
+    function updatePedestrianLight(prefix, isGreen, isBlink) {
+      const redIcon = document.getElementById(`${prefix}-red`);
+      const greenIcon = document.getElementById(`${prefix}-green`);
+      
+      if (isGreen) {
+        redIcon.className = "fa-solid fa-person-shelter text-[10px] text-slate-800";
+        greenIcon.className = "fa-solid fa-person-walking text-[10px] text-emerald-400 shadow-emerald-400 drop-shadow-[0_0_2px_#34d399]";
+      } else if (isBlink) {
+        redIcon.className = "fa-solid fa-person-shelter text-[10px] text-slate-800";
+        if (pedGreenBlinkState) {
+          greenIcon.className = "fa-solid fa-person-walking text-[10px] text-emerald-400";
+        } else {
+          greenIcon.className = "fa-solid fa-person-walking text-[10px] text-slate-800";
+        }
+      } else {
+        redIcon.className = "fa-solid fa-person-shelter text-[10px] text-red-500 drop-shadow-[0_0_2px_#ef4444]";
+        greenIcon.className = "fa-solid fa-person-walking text-[10px] text-slate-800";
+      }
+    }
+    
+    function updateValElement(id, name, val) {
+      const el = document.getElementById(id);
+      el.textContent = `${name}=${val}`;
+      if (val === 1) {
+        el.classList.add('font-bold', 'opacity-100');
+        if (name.startsWith('TR')) el.className = 'px-1 py-0.5 rounded text-red-100 bg-red-600 border border-red-500 text-[10px]';
+        if (name.startsWith('TY')) el.className = 'px-1 py-0.5 rounded text-yellow-950 bg-yellow-400 border border-yellow-300 text-[10px]';
+        if (name.startsWith('TG')) el.className = 'px-1 py-0.5 rounded text-emerald-950 bg-emerald-400 border border-emerald-300 text-[10px]';
+      } else {
+        el.className = 'px-1 py-0.5 rounded text-slate-500 bg-slate-900/60 border border-slate-800/80 opacity-60 text-[10px]';
+      }
+    }
+
+    // =========================================================================
+    // 車流與人流動畫發生器
+    // =========================================================================
+    let carSpawners = {
+      ns: { lastSpawn: 0, interval: 1400 },
+      ew: { lastSpawn: 0, interval: 1400 }
+    };
+
+    let pedSpawners = {
+      ns: { lastSpawn: 0, interval: 1000 }, 
+      ew: { lastSpawn: 0, interval: 1000 }  
+    };
+
+    function manageCarsFlow() {
+      const now = Date.now();
+      
+      // 正常車流行駛
+      if (TG1 === 1 && TG3 === 1 && (now - carSpawners.ns.lastSpawn > carSpawners.ns.interval)) {
+        spawnCar('NS'); spawnCar('SN');
+        carSpawners.ns.lastSpawn = now;
+      }
+      if (TG2 === 1 && TG4 === 1 && (now - carSpawners.ew.lastSpawn > carSpawners.ew.interval)) {
+        spawnCar('EW'); spawnCar('WE');
+        carSpawners.ew.lastSpawn = now;
+      }
+
+      // 💥 自然機率（0.3%）隨機出現闖紅燈違規者，使路口更具真實性
+      if (Math.random() < 0.003 && isPlaying) {
+        triggerNaturalViolator();
+      }
+    }
+
+    function triggerNaturalViolator() {
+      // 根據當前紅燈向，隨機生成違規車輛
+      let targetDirection = 'NS';
+      if (current_state === S0 || current_state === S1) {
+        // 南北通，東西紅 -> 生成東西違規車
+        targetDirection = Math.random() > 0.5 ? 'EW' : 'WE';
+      } else {
+        // 東西通，南北紅 -> 生成南北違規車
+        targetDirection = Math.random() > 0.5 ? 'NS' : 'SN';
+      }
+      spawnCar(targetDirection, true);
+    }
+
+    function managePedestriansFlow() {
+      if (isDisputeActive) return; // 糾紛中，暫停一般隨機行人
+
+      const now = Date.now();
+      
+      // 1. 縱向行人
+      if ((current_state === S0 || current_state === S1) && (now - pedSpawners.ns.lastSpawn > pedSpawners.ns.interval)) {
+        spawnPedestrian('NS_West');
+        spawnPedestrian('SN_East');
+        pedSpawners.ns.lastSpawn = now;
+      }
+      
+      // 2. 橫向行人
+      if ((current_state === S2 || current_state === S3) && (now - pedSpawners.ew.lastSpawn > pedSpawners.ew.interval)) {
+        spawnPedestrian('WE_North');
+        spawnPedestrian('EW_South');
+        pedSpawners.ew.lastSpawn = now;
+      }
+    }
+
+    // =========================================================================
+    // 多元車流生成邏輯 (轎車、大客車、摩托車、救護車)
+    // =========================================================================
+    function spawnCar(direction, isViolator = false) {
+      const car = document.createElement('div');
+      // 分配基本車輛屬性
+      car.className = 'car-element absolute pointer-events-none transition-all duration-300';
+      car.dataset.direction = direction;
+      
+      if (isViolator) {
+        car.dataset.violator = "true";
+      }
+
+      // 隨機車型決定 (權重: 轎車 55%、摩托車 20%、巴士 15%、救護車 10%)
+      const randType = Math.random();
+      let carType = 'sedan';
+      if (randType < 0.55) {
+        carType = 'sedan';
+      } else if (randType < 0.75) {
+        carType = 'scooter';
+      } else if (randType < 0.90) {
+        carType = 'bus';
+      } else {
+        carType = 'ambulance';
+      }
+
+      const carColors = ['#3b82f6', '#10b981', '#a855f7', '#f43f5e', '#34d399', '#f59e0b', '#64748b'];
+      const randomColor = carColors[Math.floor(Math.random() * carColors.length)];
+
+      let width = 12;
+      let height = 20;
+      let innerHtml = '';
+      
+      const isVertical = (direction === 'NS' || direction === 'SN');
+
+      if (carType === 'sedan') {
+        width = isVertical ? 12 : 20;
+        height = isVertical ? 20 : 12;
+        innerHtml = isVertical 
+          ? `<div class="w-full h-full rounded border border-slate-900/40 relative flex flex-col justify-between items-center p-0.5" style="background-color: ${randomColor}">
+               <div class="w-4/5 h-1 bg-slate-950/80 rounded-sm"></div>
+               <div class="w-4/5 h-1 bg-slate-950/80 rounded-sm"></div>
+             </div>`
+          : `<div class="w-full h-full rounded border border-slate-900/40 relative flex justify-between items-center p-0.5" style="background-color: ${randomColor}">
+               <div class="w-1 h-4/5 bg-slate-950/80 rounded-sm"></div>
+               <div class="w-1 h-4/5 bg-slate-950/80 rounded-sm"></div>
+             </div>`;
+      } 
+      else if (carType === 'bus') {
+        width = isVertical ? 14 : 32;
+        height = isVertical ? 32 : 14;
+        innerHtml = isVertical
+          ? `<div class="w-full h-full rounded-md border border-slate-950/80 relative flex flex-col justify-between items-center p-1" style="background-color: #d97706">
+               <div class="w-full h-1 bg-slate-950/90 rounded-sm"></div>
+               <div class="w-4/5 flex flex-col gap-0.5 my-1">
+                 <div class="w-full h-1 bg-slate-900/60 rounded-xs"></div>
+                 <div class="w-full h-1 bg-slate-900/60 rounded-xs"></div>
+                 <div class="w-full h-1 bg-slate-900/60 rounded-xs"></div>
+               </div>
+               <div class="w-full h-1 bg-slate-950/90 rounded-sm"></div>
+             </div>`
+          : `<div class="w-full h-full rounded-md border border-slate-950/80 relative flex justify-between items-center p-1" style="background-color: #d97706">
+               <div class="h-full w-1 bg-slate-950/90 rounded-sm"></div>
+               <div class="h-4/5 flex gap-0.5 mx-1">
+                 <div class="h-full w-1 bg-slate-900/60 rounded-xs"></div>
+                 <div class="h-full w-1 bg-slate-900/60 rounded-xs"></div>
+                 <div class="h-full w-1 bg-slate-900/60 rounded-xs"></div>
+                 <div class="h-full w-1 bg-slate-900/60 rounded-xs"></div>
+               </div>
+               <div class="h-full w-1 bg-slate-950/90 rounded-sm"></div>
+             </div>`;
+      } 
+      else if (carType === 'scooter') {
+        width = isVertical ? 8 : 12;
+        height = isVertical ? 12 : 8;
+        const helmetColor = ['#ef4444', '#f59e0b', '#3b82f6', '#ffffff'][Math.floor(Math.random() * 4)];
+        innerHtml = isVertical
+          ? `<div class="w-full h-full relative flex flex-col justify-between items-center bg-slate-700/80 rounded-full border border-slate-800">
+               <div class="w-2/3 h-1 bg-slate-900 rounded-sm"></div>
+               <div class="w-3.5 h-3.5 rounded-full shadow border border-slate-900/30 flex items-center justify-center" style="background-color: ${helmetColor}; margin: -2px 0;">
+                 <div class="w-1.5 h-1.5 bg-slate-950/60 rounded-full"></div>
+               </div>
+               <div class="w-2/3 h-1 bg-slate-900 rounded-sm"></div>
+             </div>`
+          : `<div class="w-full h-full relative flex justify-between items-center bg-slate-700/80 rounded-full border border-slate-800">
+               <div class="h-2/3 w-1 bg-slate-900 rounded-sm"></div>
+               <div class="w-3.5 h-3.5 rounded-full shadow border border-slate-900/30 flex items-center justify-center" style="background-color: ${helmetColor}; margin: 0 -2px;">
+                 <div class="w-1.5 h-1.5 bg-slate-950/60 rounded-full"></div>
+               </div>
+               <div class="h-2/3 w-1 bg-slate-900 rounded-sm"></div>
+             </div>`;
+      } 
+      else if (carType === 'ambulance') {
+        width = isVertical ? 12 : 22;
+        height = isVertical ? 22 : 12;
+        innerHtml = isVertical
+          ? `<div class="w-full h-full rounded border border-rose-500 bg-white relative flex flex-col justify-between items-center p-0.5 shadow-md">
+               <div class="w-4/5 h-1 bg-sky-900/70 rounded-xs"></div>
+               <div class="text-[8px] text-rose-500 font-black leading-none my-0.5 flex items-center justify-center scale-90 select-none">+</div>
+               <div class="w-2 h-1.5 rounded-full ambulance-siren"></div>
+               <div class="w-4/5 h-1 bg-slate-950/60 rounded-xs"></div>
+             </div>`
+          : `<div class="w-full h-full rounded border border-rose-500 bg-white relative flex justify-between items-center p-0.5 shadow-md">
+               <div class="h-4/5 w-1 bg-sky-900/70 rounded-xs"></div>
+               <div class="text-[8px] text-rose-500 font-black leading-none mx-0.5 flex items-center justify-center scale-90 select-none">+</div>
+               <div class="h-2 w-1.5 rounded-full ambulance-siren"></div>
+               <div class="h-4/5 w-1 bg-slate-950/60 rounded-xs"></div>
+             </div>`;
+      }
+
+      let animationStyle = '';
+      let inlineStyle = '';
+      
+      switch (direction) {
+        case 'NS': 
+          animationStyle = 'car-anim-ns';
+          inlineStyle = `left: ${209 - width / 2}px; top: 0px; width: ${width}px; height: ${height}px;`;
+          break;
+        case 'SN': 
+          animationStyle = 'car-anim-sn';
+          inlineStyle = `left: ${151 - width / 2}px; top: 0px; width: ${width}px; height: ${height}px;`;
+          break;
+        case 'EW': 
+          animationStyle = 'car-anim-ew';
+          inlineStyle = `left: 0px; top: ${151 - height / 2}px; width: ${width}px; height: ${height}px;`;
+          break;
+        case 'WE': 
+          animationStyle = 'car-anim-we';
+          inlineStyle = `left: 0px; top: ${209 - height / 2}px; width: ${width}px; height: ${height}px;`;
+          break;
+      }
+      
+      if (animationStyle) car.classList.add(animationStyle);
+      car.style.cssText += inlineStyle;
+      car.innerHTML = innerHtml;
+
+      // 如果是主動違規車，亮起紅色虛線外邊框，以示標記
+      if (isViolator) {
+        car.style.filter = 'drop-shadow(0 0 8px rgba(239, 68, 68, 0.95))';
+        car.style.border = '2px dashed #f43f5e';
+      }
+
+      carsLayer.appendChild(car);
+      setTimeout(() => car.remove(), 3000);
+    }
+
+    function spawnPedestrian(path) {
+      const ped = document.createElement('div');
+      ped.className = 'ped-element absolute pointer-events-none flex items-center justify-center text-[11px] font-bold transition-all';
+      
+      const characters = ['🚶', '🏃', '🚶‍♀️', '🚶‍♂️'];
+      const char = characters[Math.floor(Math.random() * characters.length)];
+      ped.textContent = char;
+
+      let inlineStyle = '';
+      let animClass = '';
+      
+      const isYellowState = (current_state === S1 || current_state === S3);
+      
+      switch (path) {
+        case 'NS_West': 
+          animClass = 'ped-ns-active';
+          inlineStyle = `left: 102px; top: 100px;`;
+          break;
+        case 'SN_East': 
+          animClass = 'ped-sn-active';
+          inlineStyle = `left: 246px; top: 250px;`;
+          break;
+        case 'WE_North': 
+          animClass = 'ped-we-active';
+          inlineStyle = `left: 130px; top: 102px;`;
+          break;
+        case 'EW_South': 
+          animClass = 'ped-ew-active';
+          inlineStyle = `left: 230px; top: 246px;`;
+          break;
+      }
+
+      ped.classList.add(animClass);
+      if (isYellowState) {
+        ped.classList.add('ped-fast'); 
+        ped.textContent = '🏃'; 
+      }
+      
+      ped.style.cssText += inlineStyle;
+      pedestriansLayer.appendChild(ped);
+      
+      const removeDelay = isYellowState ? 2500 : 5000;
+      setTimeout(() => ped.remove(), removeDelay);
+    }
+
+    // =========================================================================
+    // 🤬 行人碰瓷/相撞糾紛事件 (Pedestrian Dispute Event)
+    // =========================================================================
+    function triggerPedestrianDispute() {
+      if (isDisputeActive) return; // 一次只上演一場爭吵
+      isDisputeActive = true;
+
+      // 1. 在北側斑馬線（橫向）生成兩個迎面相撞的對罵路人
+      const ped1 = document.createElement('div');
+      const ped2 = document.createElement('div');
+
+      ped1.className = 'ped-element dispute-ped absolute pointer-events-none flex items-center justify-center text-[12px] font-bold z-20 transition-all duration-300';
+      ped2.className = 'ped-element dispute-ped absolute pointer-events-none flex items-center justify-center text-[12px] font-bold z-20 transition-all duration-300';
+
+      ped1.textContent = '🚶';
+      ped2.textContent = '🚶‍♀️';
+
+      // 初始定位：兩端朝中間走
+      ped1.style.left = '100px';
+      ped1.style.top = '102px';
+      ped2.style.left = '260px';
+      ped2.style.top = '102px';
+
+      pedestriansLayer.appendChild(ped1);
+      pedestriansLayer.appendChild(ped2);
+
+      // 2. 移動並相撞
+      setTimeout(() => {
+        if (!isDisputeActive) return;
+        ped1.style.left = '165px';
+        ped2.style.left = '195px';
+      }, 50);
+
+      // 3. 在斑馬線中央停步，開始大吵大鬧
+      setTimeout(() => {
+        if (!isDisputeActive) return;
+        ped1.textContent = '😡';
+        ped2.textContent = '🤬';
+
+        // 產生氣泡與青筋符號
+        createAngryBubble(ped1, '💢');
+        createAngryBubble(ped2, '💢');
+
+        let step = 0;
+        const dialogueList = [
+          ['你走路不看路喔！', '是你撞我好嗎！'],
+          ['撞到人是不會道歉逆？', '蛤？是你有問題吧！'],
+          ['看三小！不爽逆！', '來啊！大富翁決鬥啦！'],
+          ['警察先生！這裡有人碰瓷！', '誰碰瓷！你才亂切車道！']
+        ];
+
+        // 啟動對罵對話定時輪播
+        disputeTimer = setInterval(() => {
+          if (!isDisputeActive) return;
+          const currentDialogue = dialogueList[step % dialogueList.length];
+          showTalkBubble(ped1, currentDialogue[0]);
+          setTimeout(() => {
+            if (isDisputeActive) showTalkBubble(ped2, currentDialogue[1]);
+          }, 800);
+          step++;
+        }, 2200);
+
+      }, 1500);
+    }
+
+    function createAngryBubble(targetPed, text) {
+      const angry = document.createElement('div');
+      angry.className = 'absolute text-red-500 font-black text-xs animate-bounce pointer-events-none select-none z-30';
+      angry.textContent = text;
+      angry.style.top = '-14px';
+      angry.style.left = '4px';
+      targetPed.appendChild(angry);
+    }
+
+    function showTalkBubble(targetPed, text) {
+      // 移除舊氣泡
+      const oldBubble = targetPed.querySelector('.talk-bubble');
+      if (oldBubble) oldBubble.remove();
+
+      const bubble = document.createElement('div');
+      bubble.className = 'talk-bubble absolute whitespace-nowrap text-[9px] bg-white text-slate-900 border border-slate-400 font-semibold px-1.5 py-0.5 rounded shadow-md z-30';
+      bubble.style.top = '-25px';
+      bubble.style.left = '50%';
+      bubble.style.transform = 'translateX(-50%)';
+      bubble.textContent = text;
+
+      targetPed.appendChild(bubble);
+      setTimeout(() => { if (bubble) bubble.remove(); }, 1800);
+    }
+
+    // 調解/解散糾紛 (警察吹哨強制驅離)
+    function resolveDispute() {
+      if (!isDisputeActive) return;
+      clearInterval(disputeTimer);
+
+      const disputePeds = document.querySelectorAll('.dispute-ped');
+      disputePeds.forEach((ped, idx) => {
+        // 變更為驚嚇害怕表情
+        ped.textContent = '😨💦';
+        const bubble = ped.querySelector('.talk-bubble');
+        if (bubble) bubble.remove();
+
+        // 罵人的符號換成冷汗
+        const angry = ped.querySelector('.text-red-500');
+        if (angry) angry.textContent = '💦';
+
+        // 發表撤退台詞
+        setTimeout(() => {
+          showTalkBubble(ped, idx === 0 ? "警察來了快溜！🏃" : "好啦算我倒楣...走先！🏃‍♀️");
+        }, 100);
+
+        // 動態小跑步撤離斑馬線
+        setTimeout(() => {
+          ped.classList.add(idx === 0 ? 'ped-flee-l' : 'ped-flee-r');
+        }, 700);
+      });
+
+      // 1.5秒後重設狀態，清除物件
+      setTimeout(() => {
+        const disputePeds = document.querySelectorAll('.dispute-ped');
+        disputePeds.forEach(p => p.remove());
+        isDisputeActive = false;
+      }, 2000);
+    }
+
+    // =========================================================================
+    // 👮‍♂️ 執法天眼：闖紅燈違規偵測機制 (Red Light Running Violation Detection)
+    // =========================================================================
+    function checkViolations() {
+      const violators = document.querySelectorAll('.car-element[data-violator="true"]:not([data-arrested="true"])');
+      const container = document.getElementById('intersection-container');
+      if (!container) return;
+
+      const containerRect = container.getBoundingClientRect();
+
+      violators.forEach(car => {
+        const carRect = car.getBoundingClientRect();
+        // 取得車子相對於路口中心地圖的座標
+        const relativeX = carRect.left - containerRect.left;
+        const relativeY = carRect.top - containerRect.top;
+
+        // 如果違規車輛跨入十字路口中心偵測範圍 (125px 到 235px 之間)
+        if (relativeX > 125 && relativeX < 235 && relativeY > 125 && relativeY < 235) {
+          const dir = car.dataset.direction;
+          let isRedLightActive = false;
+
+          // 判斷當前方向是否正值紅燈 (TRx)
+          if (dir === 'NS' || dir === 'SN') {
+            isRedLightActive = (TR1 === 1); // 南北紅燈亮
+          } else {
+            isRedLightActive = (TR2 === 1); // 東西紅燈亮
+          }
+
+          if (isRedLightActive) {
+            triggerArrest(car, relativeX, relativeY);
+          }
+        }
+      });
+    }
+
+    // 觸發警察攔截逮捕與罰單開立
+    function triggerArrest(car, x, y) {
+      car.dataset.arrested = "true";
+
+      // 1. 煞車停止車輛動畫
+      car.style.animationPlayState = 'paused';
+
+      // 2. 違規反饋：亮起高飽和警戒紅光
+      car.style.filter = 'brightness(1.5) drop-shadow(0 0 15px #ef4444)';
+
+      // 3. 播放警笛與交警吹哨哨音
+      playPoliceEnforcementSound();
+      triggerWhistleVisual();
+      setTimeout(triggerWhistleVisual, 100);
+
+      // 4. 警察大聲斥責並開單 (對話氣泡)
+      showCopEnforcementSpeech();
+
+      // 5. 統計數據更新 (開單件數 + 國庫收入 +$2700 TWD)
+      ticketCount++;
+      fineRevenue += 2700;
+      document.getElementById('stat-tickets').textContent = ticketCount;
+      document.getElementById('stat-fines').textContent = `$${fineRevenue}`;
+
+      // 6. 飛出實體罰單 TWD 飄浮動畫
+      showFineTicketFloating(x, y);
+
+      // 7. 攔截開單完畢，1.5 秒後車輛扣留淡出
+      setTimeout(() => {
+        if (car) {
+          car.style.transition = 'all 0.8s ease-in-out';
+          car.style.opacity = '0';
+          car.style.transform = (car.style.transform || '') + ' scale(0.3) rotate(15deg)';
+          setTimeout(() => car.remove(), 800);
+        }
+      }, 1500);
+    }
+
+    // 飛出違規紅單視覺特效
+    function showFineTicketFloating(x, y) {
+      const container = document.getElementById('intersection-container');
+      const ticket = document.createElement('div');
+      ticket.className = 'absolute text-rose-400 font-extrabold text-[9px] bg-slate-950 border border-rose-500 px-1.5 py-0.5 rounded pointer-events-none select-none z-30 crash-text-animation shadow-xl flex items-center gap-1';
+      ticket.style.left = `${x - 18}px`;
+      ticket.style.top = `${y - 20}px`;
+      ticket.innerHTML = `<i class="fa-solid fa-receipt text-rose-500"></i> 違規罰單 +$2700 TWD`;
+      
+      container.appendChild(ticket);
+      setTimeout(() => ticket.remove(), 1200);
+    }
+
+    // 交警執行法辦講話對白
+    function showCopEnforcementSpeech() {
+      const cop = document.getElementById('police-officer');
+      // 移除舊的
+      const old = cop.querySelector('.police-speech');
+      if (old) old.remove();
+
+      const speech = document.createElement('div');
+      speech.className = 'police-speech absolute whitespace-nowrap text-[9px] bg-amber-400 text-slate-950 font-bold px-1.5 py-0.5 rounded shadow-lg border border-amber-500 z-40';
+      speech.style.top = '-28px';
+      speech.style.left = '50%';
+      speech.style.transform = 'translateX(-50%)';
+      
+      const copPhrases = [
+        "嗶嗶！紅燈還硬闖！靠邊！👮‍♂️",
+        "違規開單！紅單一張！📄",
+        "注意安全！闖紅燈開罰！🚨",
+        "波麗士開單！國庫感謝您！👮‍♂️"
+      ];
+      speech.textContent = copPhrases[Math.floor(Math.random() * copPhrases.length)];
+      cop.appendChild(speech);
+
+      setTimeout(() => { if (speech) speech.remove(); }, 2000);
+    }
+
+    // =========================================================================
+    // 實時碰撞物理偵測機制 (Realtime Collision Detection)
+    // =========================================================================
+    function checkCollisions() {
+      const cars = document.querySelectorAll('.car-element');
+      const peds = document.querySelectorAll('.ped-element');
+      const container = document.getElementById('intersection-container');
+      if (!container) return;
+
+      const containerRect = container.getBoundingClientRect();
+
+      cars.forEach(car => {
+        const carRect = car.getBoundingClientRect();
+
+        peds.forEach(ped => {
+          if (ped.dataset.hit === "true") return;
+
+          const pedRect = ped.getBoundingClientRect();
+
+          const padding = 2;
+          if (
+            carRect.left + padding < pedRect.right - padding &&
+            carRect.right - padding > pedRect.left + padding &&
+            carRect.top + padding < pedRect.bottom - padding &&
+            carRect.bottom - padding > pedRect.top + padding
+          ) {
+            triggerCollision(ped, car, containerRect);
+          }
+        });
+      });
+    }
+
+    function triggerCollision(ped, car, containerRect) {
+      ped.dataset.hit = "true";
+
+      const pedRect = ped.getBoundingClientRect();
+      const relativeX = pedRect.left - containerRect.left;
+      const relativeY = pedRect.top - containerRect.top;
+
+      ped.style.animation = 'none';
+      ped.style.left = `${relativeX}px`;
+      ped.style.top = `${relativeY}px`;
+
+      ped.textContent = '💥';
+      
+      car.style.filter = 'brightness(1.8) drop-shadow(0 0 8px rgba(239, 68, 68, 0.9))';
+      setTimeout(() => {
+        if (car) car.style.filter = 'none';
+      }, 300);
+
+      showCrashPopup(relativeX, relativeY);
+
+      setTimeout(() => {
+        ped.textContent = '👼';
+        ped.style.transition = 'all 2.2s cubic-bezier(0.1, 0.8, 0.2, 1)';
+        
+        const throwX = (Math.random() - 0.5) * 80;
+        const throwY = -140; 
+        const rotateDeg = 360 + Math.random() * 360;
+
+        ped.style.transform = `translate(${throwX}px, ${throwY}px) rotate(${rotateDeg}deg) scale(1.6)`;
+        ped.style.opacity = '0';
+      }, 150);
+
+      setTimeout(() => {
+        ped.remove();
+        // 如果被撞的人是糾紛主角，也跟著重置糾紛狀態
+        if (ped.classList.contains('dispute-ped')) {
+          clearInterval(disputeTimer);
+          isDisputeActive = false;
+        }
+      }, 2400);
+    }
+
+    function showCrashPopup(x, y) {
+      const container = document.getElementById('intersection-container');
+      const popup = document.createElement('div');
+      popup.className = 'absolute text-red-400 font-extrabold text-[10px] bg-red-950/90 px-1.5 py-0.5 rounded border border-red-500/50 pointer-events-none select-none z-30 crash-text-animation shadow-lg';
+      popup.style.left = `${x - 12}px`;
+      popup.style.top = `${y - 18}px`;
+      
+      const phrases = ['哎呀！', '天啊！😱', '叭叭！💥', '痛痛！🤕', '飛起來了！', '不看路！🚗'];
+      popup.textContent = phrases[Math.floor(Math.random() * phrases.length)];
+      
+      container.appendChild(popup);
+      setTimeout(() => popup.remove(), 1000);
+    }
+
+    // 啟動高性能物理與執法偵測器
+    function initPhysicsEngine() {
+      function physicsLoop() {
+        checkCollisions(); // 碰撞引擎
+        checkViolations(); // 違規開單逮捕引擎
+        requestAnimationFrame(physicsLoop);
+      }
+      requestAnimationFrame(physicsLoop);
+    }
+
+    // =========================================================================
+    // 哨音生成 (Web Audio Synthesizer - 無需外部 MP3 資源)
+    // =========================================================================
+    function playWhistleSound() {
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        
+        // 警察哨子：高頻雙振盪器 (產生高亢、帶點金屬顫音的嗶嗶聲)
+        const osc1 = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(2200, audioCtx.currentTime); // 主高頻
+        
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(2230, audioCtx.currentTime); // 頻率微偏產生拍頻(顫音)
+
+        // 漸弱控制
+        gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
+
+        osc1.connect(gainNode);
+        osc2.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        osc1.start();
+        osc2.start();
+        
+        osc1.stop(audioCtx.currentTime + 0.6);
+        osc2.stop(audioCtx.currentTime + 0.6);
+      } catch (e) {
+        console.warn('Web Audio API 被瀏覽器安全限制，需點擊頁面後始得播放。');
+      }
+    }
+
+    // 高頻雙頻警用執法哨音 (連續急鳴 chirp)
+    function playPoliceEnforcementSound() {
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const t = audioCtx.currentTime;
+        
+        // 發出連續兩聲急促權威的哨音 chirp-chirp
+        createChirp(t);
+        createChirp(t + 0.18);
+        
+        function createChirp(startTime) {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(2600, startTime);
+          osc.frequency.exponentialRampToValueAtTime(1900, startTime + 0.12);
+          
+          gain.gain.setValueAtTime(0.2, startTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.12);
+          
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(startTime);
+          osc.stop(startTime + 0.12);
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+
+    // 繪製哨音波紋特效 (Visual Ripple Effects)
+    function triggerWhistleVisual() {
+      const ripple = document.createElement('div');
+      ripple.className = 'absolute w-[10px] h-[10px] border-2 border-amber-400 rounded-full whistle-ripple pointer-events-none';
+      whistleRipplesContainer.appendChild(ripple);
+      
+      setTimeout(() => {
+        ripple.remove();
+      }, 800);
+    }
+
+    // =========================================================================
+    // 行人過馬路觸動按鈕控制
+    // =========================================================================
+    btnPedestrian.addEventListener('click', () => {
+      if (!isPedRequestActive) {
+        isPedRequestActive = true;
+        pedBtnStatus.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse";
+        btnPedestrian.className = "w-full px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 rounded-lg text-xs font-bold text-emerald-300 transition-all flex items-center justify-center gap-2 whitespace-nowrap";
+        btnPedestrian.querySelector('span:nth-child(2)').textContent = "已發送穿越請求";
+      }
+    });
+
+    function clearPedestrianRequest() {
+      isPedRequestActive = false;
+      pedBtnStatus.className = "w-2.5 h-2.5 rounded-full bg-slate-600";
+      btnPedestrian.className = "w-full px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 rounded-lg text-xs font-bold text-indigo-300 transition-all flex items-center justify-center gap-2 whitespace-nowrap";
+      btnPedestrian.querySelector('span:nth-child(2)').textContent = "按下請求穿越";
+    }
+
+    // =========================================================================
+    // 👮 警察吹哨人工干預按鈕 (Police Whistle Force Switch)
+    // =========================================================================
+    document.getElementById('btn-police-force').addEventListener('click', () => {
+      // 1. 播放嗶嗶哨音並繪製音波漣漪
+      playWhistleSound();
+      triggerWhistleVisual();
+      setTimeout(triggerWhistleVisual, 150); // 重疊哨音
+      
+      // 2. 解散現場任何進行中的行人糾紛
+      resolveDispute();
+
+      // 3. 模擬 Verilog 實體開關：中斷當前 counter，使 counter 快速歸零並跳轉 FSM 狀態
+      counter = 0;
+      updateNextStateLogic();
+      current_state = next_state;
+
+      // 4. 更新數據與UI
+      updateOutputDecoding();
+      updateUI();
+    });
+
+    // =========================================================================
+    // 🤬 點選觸發行人路口對罵糾紛事件
+    // =========================================================================
+    document.getElementById('btn-dispute').addEventListener('click', () => {
+      triggerPedestrianDispute();
+    });
+
+    // =========================================================================
+    // 🚨 點選手動模擬闖紅燈違規車輛
+    // =========================================================================
+    document.getElementById('btn-violator').addEventListener('click', () => {
+      triggerNaturalViolator();
+    });
+
+    // =========================================================================
+    // 控制面板事件綁定
+    // =========================================================================
+    
+    function startSimulation() {
+      if (intervalId) clearInterval(intervalId);
+      intervalId = setInterval(() => {
+        const msPassed = (baseIntervalTime * simulationSpeed);
+        tickClock(msPassed);
+      }, baseIntervalTime);
+    }
+    
+    function stopSimulation() {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    }
+    
+    // Play / Pause
+    playIcon.parentElement.addEventListener('click', () => {
+      isPlaying = !isPlaying;
+      if (isPlaying) {
+        playIcon.className = "fa-solid fa-pause";
+        playText.textContent = "暫停";
+        startSimulation();
+      } else {
+        playIcon.className = "fa-solid fa-play";
+        playText.textContent = "啟動";
+        stopSimulation();
+      }
+    });
+    
+    // Step
+    document.getElementById('btn-step').addEventListener('click', () => {
+      isPlaying = false;
+      playIcon.className = "fa-solid fa-play";
+      playText.textContent = "啟動";
+      stopSimulation();
+      tickClock(10);
+    });
+    
+    // Reset
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      current_state = S0;
+      next_state = S1;
+      counter = 0;
+      isDisputeActive = false;
+      ticketCount = 0;
+      fineRevenue = 0;
+      document.getElementById('stat-tickets').textContent = 0;
+      document.getElementById('stat-fines').textContent = '$0';
+      clearInterval(disputeTimer);
+      clearPedestrianRequest();
+      carsLayer.innerHTML = '';
+      pedestriansLayer.innerHTML = '';
+      updateOutputDecoding();
+      updateUI();
+    });
+    
+    // Speed Slider
+    speedSlider.addEventListener('input', (e) => {
+      simulationSpeed = parseInt(e.target.value, 10);
+      speedIndicator.textContent = `${simulationSpeed}x`;
+    });
+    
+    // 網頁初始化
+    window.onload = function() {
+      updateOutputDecoding();
+      updateUI();
+      startSimulation();
+      initPhysicsEngine();
+    };
+  </script>
+</body>
+</html>
